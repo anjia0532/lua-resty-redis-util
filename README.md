@@ -5,6 +5,12 @@
 
 本文假设你已经了解nginx+lua或者openresty如何使用lua脚本(e.g. `lua_package_path`配置,`*_by_lua_file`),基础的redis相关知识，以及[openresty/lua-resty-redis][]的基本使用方法([openresty/lua-resty-redis#README.md][README.md])。
 
+## 安装(Install)
+
+```bash
+opm get anjia0532/lua-resty-redis-util
+```
+
 ## 对比
 
 截取官方部分代码，进行说明
@@ -64,14 +70,22 @@
     ngx.say("set result: ", ok) -- 页面输出结果
 ```
 
-## 注意事项
+## 注意事项(Note)
 
-### 默认值
+### 默认值(Default Value)
 
 ```lua
 local red = redis:new();
 --使用了默认值,等同于
-local red2 = redis:new({host='127.0.0.1',port=6379,db_index=0,password=nil,timeout=1000,keepalive=60000,pool_size=100});
+local red2 = redis:new({
+                            host='127.0.0.1',
+                            port=6379,
+                            db_index=0,
+                            password=nil,
+                            timeout=1000,
+                            keepalive=60000,
+                            pool_size=100
+                        });
 ```
 
 - host: redis host,default: 127.0.0.1
@@ -176,11 +190,11 @@ local red2 = redis:new({host='127.0.0.1',port=6379,db_index=0,password=nil,timeo
 ```
 
 
-## 鸣谢
+## 鸣谢(Thanks)
 
 本工具借鉴了 [lua-resty-redis/lib/resty/redis.lua][] 和 [Redis 接口的二次封装][linkRedis接口的二次封装] 的代码
 
-## 反馈
+## 反馈(Feedback)
 
 如果有问题，欢迎提 [issues][]
 
