@@ -82,7 +82,7 @@ function _M.subscribe( self, channel )
       return nil, err
   end
 
-  local function do_read_func ( do_read ),
+  local function do_read_func ( do_read )
     if do_read == nil or do_read == true then
         res, err = redis:read_reply()
         if not res then
