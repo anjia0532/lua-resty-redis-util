@@ -189,6 +189,14 @@ local red2 = redis:new({
     ngx.say("script",res)
 ```
 
+## 鸣谢(Thanks)
+
+本工具借鉴了 [lua-resty-redis/lib/resty/redis.lua][] 和 [Redis 接口的二次封装][linkRedis接口的二次封装] 的代码
+
+## 反馈(Feedback)
+
+如果有问题，欢迎提 [issues][]
+
 Copyright and License
 =====================
 
@@ -207,13 +215,6 @@ Redistribution and use in source and binary forms, with or without modification,
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-## 鸣谢(Thanks)
-
-本工具借鉴了 [lua-resty-redis/lib/resty/redis.lua][] 和 [Redis 接口的二次封装][linkRedis接口的二次封装] 的代码
-
-## 反馈(Feedback)
-
-如果有问题，欢迎提 [issues][]
 
 [openresty/lua-resty-redis]: https://github.com/openresty/lua-resty-redis
 [agentzh]: https://github.com/agentzh
