@@ -90,7 +90,7 @@ local red2 = redis:new({
 
 - host: redis host,default: 127.0.0.1
 - port: redis port,default:6379
-- db_index: redis库(0-15)，此参数预留没有用到，默认的就是0库(建议用不同端口开不同实例或者用不同前缀，因为换库需要用select命令),default:0
+- db_index: redis库索引(默认0-15 共16个库)，默认的就是0库(建议用不同端口开不同实例或者用不同前缀，因为换库需要用select命令),default:0
 - password: redis auth 认证的密码
 - timeout: reids连接超时时间,default: 1000 (1s)
 - keepalive: redis连接池的最大闲置时间, default: 60000 (1m)
