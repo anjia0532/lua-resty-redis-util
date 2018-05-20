@@ -9,7 +9,7 @@ end
 
 local _M = new_tab(0, 54)
 
-_M._VERSION = '0.03'
+_M._VERSION = '0.04'
 
 local mt = {__index = _M}
 
@@ -33,16 +33,17 @@ local pool_size             = 100
 
 -- if res is ngx.null or nil or type(res) is table and all value is ngx.null return true else false
 local function _is_null(res)
-  if type(res) == "table" then
+  if res == ngx.null or res ==nil then
+    return true
+  elseif type(res) == "table" then
     for _, v in pairs(res) do
       if v ~= ngx.null then
         return false
       end
     end
-  elseif res == ngx.null or res ==nil then
-    return true
+    -- thanks for https://github.com/anjia0532/lua-resty-redis-util/issues/3
+    return true 
   end
-
   return false
 end
 
