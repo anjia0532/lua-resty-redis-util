@@ -260,7 +260,7 @@ end
 
 -- init options
 function _M.new(self, opts)
-  
+  opts = opts or {} -- fixed https://github.com/anjia0532/lua-resty-redis-util/issues/4
   if (type(opts) ~= "table") then
     return nil, "user_config must be a table"
   end
