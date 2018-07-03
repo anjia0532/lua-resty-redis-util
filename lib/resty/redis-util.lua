@@ -1,339 +1,328 @@
 -- Copyright (C) Anjia (anjia0532)
 
-local json                = require('cjson') 
-local json_encode         = json.encode
-local json_decode         = json.decode
+local redis_c = require("resty.redis")
 
-local ngx_log             = ngx.log
-local ngx_ERR             = ngx.ERR
-local ngx_CRIT            = ngx.CRIT
-local ngx_INFO            = ngx.INFO
+local ok, new_tab = pcall(require, "table.new")
+if not ok or type(new_tab) ~= "function" then
+    new_tab = function (narr, nrec) return {} end
+end
 
+local _M = new_tab(0, 54)
 
-local ffi                 = require ('ffi')
-local ffi_new             = ffi.new
-local ffi_str             = ffi.string
-local ffi_cast            = ffi.cast
-
-local _M    ={}
 _M._VERSION = '0.05'
-local mt = { __index = _M }
 
-ffi.cdef[[
+local mt = {__index = _M}
 
-typedef unsigned int mmdb_uint128_t __attribute__ ((__mode__(TI)));
 
-typedef struct MMDB_entry_s {
-  struct MMDB_s *mmdb;
-  uint32_t offset;
-} MMDB_entry_s;
+local ngx_log               = ngx.log
+local debug                 = ngx.config.debug
 
-typedef struct MMDB_lookup_result_s {
-  bool found_entry;
-  MMDB_entry_s entry;
-  uint16_t netmask;
-} MMDB_lookup_result_s;
+local DEBUG                 = ngx.DEBUG
+local CRIT                  = ngx.CRIT
 
-typedef struct MMDB_entry_data_s {
-  bool has_data;
-  union {
-    uint32_t pointer;
-    const char *utf8_string;
-    double double_value;
-    const uint8_t *bytes;
-    uint16_t uint16;
-    uint32_t uint32;
-    int32_t int32;
-    uint64_t uint64;
-    mmdb_uint128_t uint128;
-    bool boolean;
-    float float_value;
-  };
+local MAX_PORT              = 65535
 
-  uint32_t offset;
-  uint32_t offset_to_next;
-  uint32_t data_size;
-  uint32_t type;
-} MMDB_entry_data_s;
 
-typedef struct MMDB_entry_data_list_s {
-  MMDB_entry_data_s entry_data;
-  struct MMDB_entry_data_list_s *next;
-} MMDB_entry_data_list_s;
+local host                  = '127.0.0.1'
+local port                  = 6379
+local db_index              = 0
+local password              = nil
+local keepalive             = 60000 --60s
+local pool_size             = 100
 
-typedef struct MMDB_description_s {
-  const char *language;
-  const char *description;
-} MMDB_description_s;
 
-typedef struct MMDB_metadata_s {
-  uint32_t node_count;
-  uint16_t record_size;
-  uint16_t ip_version;
-  const char *database_type;
-  struct {
-    size_t count;
-    const char **names;
-  } languages;
-  uint16_t binary_format_major_version;
-  uint16_t binary_format_minor_version;
-  uint64_t build_epoch;
-  struct {
-    size_t count;
-    MMDB_description_s **descriptions;
-  } description;
-} MMDB_metadata_s;
-
-typedef struct MMDB_ipv4_start_node_s {
-  uint16_t netmask;
-  uint32_t node_value;
-} MMDB_ipv4_start_node_s;
-
-typedef struct MMDB_s {
-  uint32_t flags;
-  const char *filename;
-  ssize_t file_size;
-  const uint8_t *file_content;
-  const uint8_t *data_section;
-  uint32_t data_section_size;
-  const uint8_t *metadata_section;
-  uint32_t metadata_section_size;
-  uint16_t full_record_byte_size;
-  uint16_t depth;
-  MMDB_ipv4_start_node_s ipv4_start_node;
-  MMDB_metadata_s metadata;
-} MMDB_s;
-
-typedef  char * pchar;
-
-MMDB_lookup_result_s MMDB_lookup_string(MMDB_s *const mmdb,   const char *const ipstr, int *const gai_error,int *const mmdb_error);
-int MMDB_open(const char *const filename, uint32_t flags, MMDB_s *const mmdb);
-int MMDB_aget_value(MMDB_entry_s *const start,  MMDB_entry_data_s *const entry_data,  const char *const *const path);
-char *MMDB_strerror(int error_code);
-int MMDB_get_entry_data_list(MMDB_entry_s *start, MMDB_entry_data_list_s **const entry_data_list);
-void MMDB_free_entry_data_list(MMDB_entry_data_list_s *const entry_data_list);
-]]
-
--- error codes 
--- https://github.com/maxmind/libmaxminddb/blob/master/include/maxminddb.h#L66
-local MMDB_SUCCESS                                  =   0
-local MMDB_FILE_OPEN_ERROR                          =   1
-local MMDB_CORRUPT_SEARCH_TREE_ERROR                =   2
-local MMDB_INVALID_METADATA_ERROR                   =   3
-local MMDB_IO_ERROR                                 =   4
-local MMDB_OUT_OF_MEMORY_ERROR                      =   5
-local MMDB_UNKNOWN_DATABASE_FORMAT_ERROR            =   6
-local MMDB_INVALID_DATA_ERROR                       =   7
-local MMDB_INVALID_LOOKUP_PATH_ERROR                =   8
-local MMDB_LOOKUP_PATH_DOES_NOT_MATCH_DATA_ERROR    =   9
-local MMDB_INVALID_NODE_NUMBER_ERROR                =   10
-local MMDB_IPV6_LOOKUP_IN_IPV4_DATABASE_ERROR       =   11
-
--- data type
--- https://github.com/maxmind/libmaxminddb/blob/master/include/maxminddb.h#L40
-local MMDB_DATA_TYPE_EXTENDED                       =   0
-local MMDB_DATA_TYPE_POINTER                        =   1
-local MMDB_DATA_TYPE_UTF8_STRING                    =   2
-local MMDB_DATA_TYPE_DOUBLE                         =   3
-local MMDB_DATA_TYPE_BYTES                          =   4
-local MMDB_DATA_TYPE_UINT16                         =   5
-local MMDB_DATA_TYPE_UINT32                         =   6
-local MMDB_DATA_TYPE_MAP                            =   7
-local MMDB_DATA_TYPE_INT32                          =   8
-local MMDB_DATA_TYPE_UINT64                         =   9
-local MMDB_DATA_TYPE_UINT128                        =   10
-local MMDB_DATA_TYPE_ARRAY                          =   11
-local MMDB_DATA_TYPE_CONTAINER                      =   12
-local MMDB_DATA_TYPE_END_MARKER                     =   13
-local MMDB_DATA_TYPE_BOOLEAN                        =   14
-local MMDB_DATA_TYPE_FLOAT                          =   15
-
--- you should install the libmaxminddb to your system
-local maxm                                          = ffi.load('libmaxminddb.so')
-local mmdb                                          = ffi_new('MMDB_s')
-local initted                                       = false
---https://github.com/maxmind/libmaxminddb
-
-function _M.init(dbfile)
-  if not initted then
-    initted = true
-    local file_name_ip2   = ffi_new('char[?]',#dbfile,dbfile)
-    local maxmind_ready   = maxm.MMDB_open(file_name_ip2,0,mmdb)
+-- if res is ngx.null or nil or type(res) is table and all value is ngx.null return true else false
+local function _is_null(res)
+  if res == ngx.null or res ==nil then
+    return true
+  elseif type(res) == "table" then
+    for _, v in pairs(res) do
+      if v ~= ngx.null then
+        return false
+      end
+    end
+    -- thanks for https://github.com/anjia0532/lua-resty-redis-util/issues/3
+    return true 
   end
-  return initted
+  return false
 end
 
-function _M.initted()
-    return initted
+
+local function _debug_err(msg,err)
+  if debug then
+    ngx_log(DEBUG, msg ,err)
+  end
 end
 
--- https://github.com/maxmind/libmaxminddb/blob/master/src/maxminddb.c#L1938 
--- LOCAL MMDB_entry_data_list_s *dump_entry_data_list( FILE *stream, MMDB_entry_data_list_s *entry_data_list, int indent, int *status)
-local function _dump_entry_data_list(entry_data_list,status,resultTab)
-
-  if not entry_data_list then
-    return nil,nil,resultTab
+-- encapsulation redis connect
+local function _connect_mod(self,redis)
+  
+  -- set redis host,port
+  local ok, err = redis:connect(host, port)
+  if not ok or err then
+  
+    _debug_err("previous connection not finished,reason::",err)
+    
+    return nil, err
   end
   
-  if not resultTab then
-    resultTab = {}
+  -- set auth
+  if password then
+    local times, err = redis:get_reused_times()
+    
+    if times == 0 then
+    
+      local ok, err = redis:auth(password)
+      if not ok or err then
+        _debug_err("failed to set redis password,reason::",err)
+        return nil, err
+      end
+    elseif err then
+      _debug_err( "failed to get this connect reused times,reason::",err)
+      return nil, err
+    end
   end
   
+  if db_index >0 then 
+    local ok, err = redis:select(db_index)
+      if not ok or err then
+        _debug_err( "failed to select redis databse index to" , db_index , ",reason::",err)
+        return nil, err
+      end
+  end
   
-  local entry_data_item = entry_data_list[0].entry_data
-  local data_type = entry_data_item.type
-  local data_size = entry_data_item.data_size
-  
-  if data_type == MMDB_DATA_TYPE_MAP then
-    table.insert(resultTab,"{")
-    
-    local flag = false
-    local size = entry_data_item.data_size
-    
-    entry_data_list = entry_data_list[0].next
-    
-    while(size > 0 and entry_data_list)
-    do 
-      entry_data_item = entry_data_list[0].entry_data
-      data_type = entry_data_item.type
-      data_size = entry_data_item.data_size
-      
-      if MMDB_DATA_TYPE_UTF8_STRING  ~= data_type then
-        return nil,MMDB_INVALID_DATA_ERROR,resultTab
-      end
-      
-      local val = ffi_str(entry_data_item.utf8_string,data_size)
+  return redis, nil
+end
 
-      if not val then
-        return nil,MMDB_OUT_OF_MEMORY_ERROR,resultTab
-      end
-      
-      -- if latest str is { ,dont append `,`
-      table.insert(resultTab,(flag and ',"%s":' or '"%s":'):format(val))
-      
-      flag = true
-      
-      entry_data_list = entry_data_list[0].next
-      entry_data_list,status,resultTab = _dump_entry_data_list(entry_data_list,status,resultTab)
-      
-      if status ~= MMDB_SUCCESS then
-        return nil,nil,resultTab
-      end
-      
-      size = size -1 
-    end
-    table.insert(resultTab,"}")
-    
 
-  elseif entry_data_list[0].entry_data.type == MMDB_DATA_TYPE_ARRAY then
-    local size = entry_data_list[0].entry_data.data_size
+local function _init_connect()
+  -- init redis
+  local redis, err = redis_c:new()
+  if not redis then
+    _debug_err( "failed to init redis,reason::",err)
+    return nil, err
+  end
 
-    table.insert(resultTab,"[")
-    
-    entry_data_list = entry_data_list[0].next
-    
-    while(size >0 and entry_data_list)
-    do
-      entry_data_list,status,resultTab = _dump_entry_data_list(entry_data_list,status,resultTab)
-      
-      if status ~= MMDB_SUCCESS then
-        return nil,nil,resultTab
-      end
-      
-      size = size -1 
-    end
-    table.insert(resultTab,"]")
+  -- get connect
+  local ok, err = _connect_mod(self,redis)
+  if not ok or err then
+    _debug_err( "failed to create redis connection,reason::",err)
+    return nil, err
+  end
+  return redis,nil
+end
 
-    
-  else
-    entry_data_item = entry_data_list[0].entry_data
-    data_type = entry_data_item.type
-    data_size = entry_data_item.data_size
-    
-    local val
-    -- string type "key":"val"
-    -- other type "key":val
-    -- default other type
-    local fmt="%s"
-    if data_type == MMDB_DATA_TYPE_UTF8_STRING then
-      val = ffi_str(entry_data_item.utf8_string,data_size)
-      fmt='"%s"'
-      if not val then
-        status = MMDB_OUT_OF_MEMORY_ERROR
-        return nil,status,resultTab
+-- put it into the connection pool of size (default 100), with max idle time (default 60s)
+local function _set_keepalive_mod(self,redis )
+  return redis:set_keepalive(keepalive, pool_size)
+end
+
+-- encapsulation subscribe
+function _M.subscribe( self, channel )
+
+  -- init redis
+  local redis, err = _init_connect()
+  if not redis then
+    _debug_err( "failed to init redis,reason::",err)
+    return nil, err
+  end
+
+  -- sub channel
+  local res, err = redis:subscribe(channel)
+  if not res then
+    _debug_err("failed to subscribe channel,reason:",err)
+    return nil, err
+  end
+
+  local function do_read_func ( do_read )
+    if do_read == nil or do_read == true then
+      res, err = redis:read_reply()
+      if not res then
+        _debug_err("failed to read subscribe channel reply,reason:",err)
+        return nil, err
       end
-    elseif data_type == MMDB_DATA_TYPE_BYTES then
-      val = ffi_str(ffi_cast('char * ',entry_data_item.bytes),data_size)
-      fmt='"%s"'
-      if not val then
-        status = MMDB_OUT_OF_MEMORY_ERROR
-        return nil,status,resultTab
-      end
-    elseif data_type == MMDB_DATA_TYPE_DOUBLE then
-      val = entry_data_item.double_value
-    elseif data_type == MMDB_DATA_TYPE_FLOAT then
-      val = entry_data_item.float_value
-    elseif data_type == MMDB_DATA_TYPE_UINT16 then
-      val = entry_data_item.uint16
-    elseif data_type == MMDB_DATA_TYPE_UINT32 then
-      val = entry_data_item.uint32
-    elseif data_type == MMDB_DATA_TYPE_BOOLEAN then
-      val = entry_data_item.boolean == 1
-    elseif data_type == MMDB_DATA_TYPE_UINT64 then
-      val = entry_data_item.uint64
-    elseif data_type == MMDB_DATA_TYPE_INT32 then
-      val = entry_data_item.int32
-    else
-      return nil,MMDB_INVALID_DATA_ERROR,resultTab
+      return res
     end
     
-    table.insert(resultTab,(fmt):format(val))
-    entry_data_list = entry_data_list[0].next
+    -- if do_read is false 
+    redis:unsubscribe(channel)
+    _set_keepalive_mod(self,redis)
+    return
   end
-  status = MMDB_SUCCESS
-  return entry_data_list,status,resultTab
+
+  return do_read_func
 end
 
-function _M.lookup(ip)
-
-  if not initted then
-      return nil, "not initialized"
-  end
-  
-  local ip_str = ffi_cast('const char *',ffi_new('char[?]',#ip+1,ip))
-  local gai_error = ffi_new('int[1]')
-  local mmdb_error = ffi_new('int[1]')
-
-  local result = maxm.MMDB_lookup_string(mmdb,ip_str,gai_error,mmdb_error)
-
-  if mmdb_error[0] ~= MMDB_SUCCESS then
-    return nil,'fail when lookup'
-  end
-
-  if gai_error[0] ~= MMDB_SUCCESS then
-    return nil,'ga error'
-  end
-
-  if true ~= result.found_entry then
-    ngx_log(ngx_ERR, "stream lua mmdb lookup: entry not found")
-    return nil,'not found'
-  end
-
-  local entry_data_list = ffi_cast('MMDB_entry_data_list_s **const',ffi_new("MMDB_entry_data_list_s"))
-  
-  local mmdb_error = maxm.MMDB_get_entry_data_list(result.entry,entry_data_list)
-  
-  local _,status,resultTap = _dump_entry_data_list(entry_data_list)
-  maxm.MMDB_free_entry_data_list(entry_data_list[0])
-  
-  if status ~= MMDB_SUCCESS then
-    return nil,'no data'
-  end
-  
-  
-  return json_decode(table.concat(resultTap or {'{','}'})),nil -- fix https://github.com/anjia0532/lua-resty-maxminddb/issues/5#issuecomment-390845118
+-- init pipeline,default cmds num is 4
+function _M.init_pipeline(self, n)
+  self._reqs = new_tab(n or 4, 0)
 end
- 
--- https://www.maxmind.com/en/geoip2-databases  you should download  the mmdb file from maxmind
- 
-return _M;
+
+-- cancel pipeline
+function _M.cancel_pipeline(self)
+  self._reqs = nil
+end
+
+-- commit pipeline
+function _M.commit_pipeline(self)
+  -- get cache cmds
+  local _reqs = rawget(self, "_reqs") 
+  if not _reqs then
+    _debug_err("failed to commit pipeline,reason:no pipeline")
+    return nil, "no pipeline"
+  end
+
+  self._reqs = nil
+
+  -- init redis
+  local redis, err = _init_connect()
+  if not redis then
+    _debug_err( "failed to init redis,reason::",err)
+    return nil, err
+  end
+
+  redis:init_pipeline()
+  
+   --redis command like set/get ...
+  for _, vals in ipairs(_reqs) do
+    -- vals[1] is redis cmd
+    local fun = redis[vals[1]]
+    -- get params without cmd
+    table.remove(vals , 1)
+    -- invoke redis cmd 
+    fun(redis, unpack(vals))
+  end
+
+  -- commit pipeline
+  local results, err = redis:commit_pipeline()
+  if not results or err then
+    _debug_err( "failed to commit pipeline,reason:",err)
+    return {}, err
+  end
+
+  -- check null
+  if _is_null(results) then
+    results = {}
+    ngx.log(ngx.WARN, "redis result is null")
+  end
+
+  -- put it into the connection pool
+  _set_keepalive_mod(self,redis)
+
+  -- if null set default value nil
+  for i,value in ipairs(results) do
+    if _is_null(value) then
+      results[i] = nil
+    end
+  end
+
+  return results, err
+end
+
+-- common method
+local function do_command(self, cmd, ...)
+  
+  -- pipeline reqs
+  local _reqs = rawget(self, "_reqs")
+  if _reqs then
+    -- append reqs
+    _reqs[#_reqs + 1] = {cmd,...}
+    return
+  end
+  
+  -- init redis
+  local redis, err = _init_connect()
+  if not redis then
+    _debug_err( "failed to init redis,reason::",err)
+    return nil, err
+  end
+
+  -- exec redis cmd
+  local method = redis[cmd]
+  local result, err = method(redis, ...)
+  if not result or err then
+    return nil, err
+  end
+
+  -- check null
+  if _is_null(result) then
+    result = nil
+  end
+
+  -- put it into the connection pool
+  local ok, err = _set_keepalive_mod(self,redis)
+  if not ok or err then
+    return nil, err
+  end
+
+  return result, nil
+end
+
+-- init options
+function _M.new(self, opts)
+  opts = opts or {} -- fixed https://github.com/anjia0532/lua-resty-redis-util/issues/4
+  if (type(opts) ~= "table") then
+    return nil, "user_config must be a table"
+  end
+
+  for k, v in pairs(opts) do
+    if k == "host" then
+      if type(v) ~= "string" then
+        return nil, '"host" must be a string'
+      end
+      host = v
+    elseif k == "port" then
+      if type(v) ~= "number" then
+        return nil, '"port" must be a number'
+      end
+      if v < 0 or v > MAX_PORT then
+        return nil, ('"port" out of range 0~%s'):format(MAX_PORT)
+      end
+      port = v
+    elseif k == "password" then
+      if type(v) ~= "string" then
+        return nil, '"password" must be a string'
+      end
+      password = v
+    elseif k == "db_index" then
+      if type(v) ~= "number" then
+        return nil, '"db_index" must be a number'
+      end
+      if v < 0 then
+        return nil, '"db_index" must be >= 0'
+      end
+      db_index = v
+    elseif k == "timeout" then
+      if type(v) ~= "number" or v < 0 then
+        return nil, 'invalid "timeout"'
+      end
+      keepalive = v
+    elseif k == "pool_size" then
+      if type(v) ~= "number" or v < 0 then
+        return nil, 'invalid "pool_size"'
+      end
+      pool_size = v
+    end
+  end
+  
+  if not (host and port) and not path then
+    return nil, "no redis server configured. \"host\"/\"port\" is required."
+  end
+  
+  return setmetatable({},mt)
+end
+
+-- dynamic cmd
+setmetatable(_M, {__index = function(self, cmd)
+    local method =
+        function (self, ...)
+            return do_command(self, cmd, ...)
+        end
+
+  -- cache the lazily generated method in our
+  -- module table
+    _M[cmd] = method
+    return method
+end})
+
+return _M
