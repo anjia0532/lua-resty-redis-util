@@ -9,7 +9,7 @@ end
 
 local _M = new_tab(0, 54)
 
-_M._VERSION = '0.05'
+_M._VERSION = '0.06'
 
 local mt = {__index = _M}
 
@@ -305,7 +305,7 @@ function _M.new(self, opts)
     end
   end
   
-  if not (host and port) and not path then
+  if not (host and port) then
     return nil, "no redis server configured. \"host\"/\"port\" is required."
   end
   
