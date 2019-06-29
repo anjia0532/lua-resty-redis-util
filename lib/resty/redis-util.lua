@@ -29,6 +29,7 @@ local db_index              = 0
 local password              = nil
 local keepalive             = 60000 --60s
 local pool_size             = 100
+local timeout             = 3000 --3s   --modify by hirryli
 
 
 -- if res is ngx.null or nil or type(res) is table and all value is ngx.null return true else false
@@ -56,7 +57,14 @@ end
 
 -- encapsulation redis connect
 local function _connect_mod(self,redis)
-  
+  -- set timeout -- add by hirryli 
+  -- ngx.say("timeout:", timeout)
+  if timeout then    
+    redis:set_timeout(timeout)
+  else
+    redis:set_timeout(3000)
+  end
+
   -- set redis host,port
   local ok, err = redis:connect(host, port)
   if not ok or err then
@@ -295,6 +303,11 @@ function _M.new(self, opts)
     elseif k == "timeout" then
       if type(v) ~= "number" or v < 0 then
         return nil, 'invalid "timeout"'
+      end
+      timeout = v
+    elseif k == "keepalive" then
+      if type(v) ~= "number" or v < 0 then
+        return nil, 'invalid "keepalive"'
       end
       keepalive = v
     elseif k == "pool_size" then
