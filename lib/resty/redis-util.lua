@@ -65,8 +65,14 @@ local function _connect_mod(self,redis)
     redis:set_timeout(3000)
   end
 
+  local ok, err
+  -- set redis unix socket
+  if host:find("unix:/", 1, true) == 1 then
+    ok, err = redis:connect(host)
   -- set redis host,port
-  local ok, err = redis:connect(host, port)
+  else
+    ok, err = redis:connect(host, port)
+  end
   if not ok or err then
   
     _debug_err("previous connection not finished,reason::",err)
