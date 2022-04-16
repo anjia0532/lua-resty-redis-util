@@ -1,3 +1,4 @@
+rockspec_format = "3.0"
 package = "lua-resty-redis-util"
 version = "0.07-1"
 supported_platforms = {"linux", "macosx"}
