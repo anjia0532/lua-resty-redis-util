@@ -1,0 +1,26 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - '*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build and Publish
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Build and push opm
+        run: |
+           docker run --rm -t -v $(pwd):/tmp openresty/openresty:alpine-fat /bin/sh -c "echo -e 'github_account=${{ github.actor }}\ngithub_token=${{ secrets.OPM_GITHUB_TOKEN }}\nupload_server=https://opm.openresty.org\ndownload_server=https://opm.openresty.org' > ~/.opmrc && cd /tmp && opm build && opm upload"
+        shell: bash
+
+      - name: Build and push luarocks
+        run: |
+          rockspec=$(ls rockspec/ | grep rockspec | sort -k5,5 -r | head -n1)
+          docker run --rm -t -v $(pwd):/tmp akorn/luarocks:lua5.1-alpine /bin/sh -c "apk --no-cache add alpine-sdk perl zip unzip && cd /tmp && luarocks install dkjson && luarocks upload rockspec/${rockspec} --api-key ${{ secrets.LUAROCKS_API_KEY }}"
