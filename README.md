@@ -8,7 +8,11 @@
 ## 安装(Install)
 
 ```bash
+# opm 安装
 opm get anjia0532/lua-resty-redis-util
+
+# luarocks 安装
+luarocks install lua-resty-redis-util
 ```
 
 ## 对比
